@@ -16,7 +16,7 @@ FAISS_DIR = "faiss_index"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 st.set_page_config(
-    page_title="BB Counsellor AI",
+    page_title="Buisiness Counsellor",
     page_icon="🧠",
     layout="centered"
 )
@@ -109,7 +109,7 @@ If you'd like, feel free to ask a follow-up question.
 # ===============================
 # UI
 # ===============================
-st.title("🧠 BB Counsellor AI (Offline RAG)")
+st.title("🧠 BUISINESS COUNSELLOR ")
 st.caption("Answers strictly from your documents")
 
 if not os.path.exists(DATA_FOLDER):
