@@ -4,7 +4,6 @@ import os
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain.schema import Document
 
 from sentence_transformers import SentenceTransformer
 import numpy as np
