@@ -21,11 +21,10 @@
 
 import streamlit as st
 import os
-from langchain.document_loaders import PyPDFLoader, Docx2txtLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 
 # ------------------------------------------------------
 # CONFIG
