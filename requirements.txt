@@ -1,13 +1,13 @@
 streamlit==1.31.1
 
-# LangChain (modular, NO core langchain)
+# LangChain modular packages
 langchain-community==0.0.30
 langchain-text-splitters==0.0.1
 
 # Vector DB
 faiss-cpu==1.7.4
 
-# Embeddings stack (LOCKED versions)
+# Embeddings stack (LOCKED)
 sentence-transformers==2.2.2
 transformers==4.37.2
 huggingface_hub==0.19.4
@@ -17,6 +17,7 @@ accelerate==0.27.2
 # Document loaders
 pypdf==3.17.4
 python-docx==1.1.0
+docx2txt==0.8
 
 # Utils
 numpy
