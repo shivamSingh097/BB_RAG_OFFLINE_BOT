@@ -6,7 +6,17 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
 from sentence_transformers import SentenceTransformer
+from langchain_core.embeddings import Embeddings
 
+class LocalSentenceTransformerEmbeddings(Embeddings):
+    def __init__(self, model):
+        self.model = model
+
+    def embed_documents(self, texts):
+        return self.model.encode(texts, show_progress_bar=False).tolist()
+
+    def embed_query(self, text):
+        return self.model.encode([text], show_progress_bar=False)[0].tolist()
 
 # ===============================
 # CONFIG
@@ -27,7 +37,8 @@ st.set_page_config(
 # ===============================
 @st.cache_resource
 def load_embeddings():
-    return SentenceTransformer(EMBEDDING_MODEL)
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    return LocalSentenceTransformerEmbeddings(model)
 
 
 # ===============================
@@ -75,16 +86,15 @@ def get_vectorstore(chunks):
     texts = [c.page_content for c in chunks]
     metadatas = [c.metadata for c in chunks]
 
-    vectors = embeddings.encode(texts, show_progress_bar=False)
-
-    vectorstore = FAISS.from_embeddings(
-        list(zip(texts, vectors)),
+    vectorstore = FAISS.from_texts(
+        texts=texts,
         embedding=embeddings,
         metadatas=metadatas
     )
 
     vectorstore.save_local(FAISS_DIR)
     return vectorstore
+
 
 
 # ===============================
