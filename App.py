@@ -78,7 +78,7 @@ def get_vectorstore(chunks):
     vectors = embeddings.encode(texts, show_progress_bar=False)
 
     vectorstore = FAISS.from_embeddings(
-        embeddings=list(zip(texts, vectors)),
+        list(zip(texts, vectors)),
         embedding=embeddings,
         metadatas=metadatas
     )
