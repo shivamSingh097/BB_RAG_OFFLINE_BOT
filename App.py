@@ -1,194 +1,141 @@
-# ======================================================
-# STREAMLIT-ONLY LOCAL RAG CHATBOT (FOLDER-BASED INGEST)
-# Reads ALL PDF & Word files from BB_Data folder
-# Acts like a professional counsellor in answers
-# ======================================================
-
-# ------------------------------------------------------
-# PROJECT STRUCTURE
-# ------------------------------------------------------
-# project/
-# ├── app.py
-# ├── requirements.txt
-# └── BB_Data/
-#     ├── file1.pdf
-#     ├── file2.docx
-#     └── ...
-
-# ------------------------------------------------------
-# app.py
-# ------------------------------------------------------
-
 import streamlit as st
 import os
+
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain.schema import Document
 
-# ------------------------------------------------------
-# CONFIG
-# ------------------------------------------------------
+from sentence_transformers import SentenceTransformer
+import numpy as np
+
+# ---------------------------
+# App Config
+# ---------------------------
+st.set_page_config(page_title="BB Offline RAG Counsellor", layout="wide")
+st.title("🧠 BB Offline RAG Counsellor Bot")
+
 DATA_FOLDER = "BB_Data"
-CHUNK_SIZE = 900
-CHUNK_OVERLAP = 200
 
-st.set_page_config(page_title="BB Counsellor RAG Bot", layout="wide")
-
-st.markdown("""
-<style>
-.chat-user {
-    background-color: #DCF8C6;
-    padding: 12px;
-    border-radius: 12px;
-    margin: 6px 0;
-}
-.chat-bot {
-    background-color: #F3F4F6;
-    padding: 12px;
-    border-radius: 12px;
-    margin: 6px 0;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.title("🧠 BB Professional Counsellor Bot")
-st.caption("Reads all documents from BB_Data | English + Hinglish | Fully Offline")
-
-# ------------------------------------------------------
-# SESSION STATE
-# ------------------------------------------------------
-if "vector_db" not in st.session_state:
-    st.session_state.vector_db = None
-
-if "chat" not in st.session_state:
-    st.session_state.chat = []
-
-# ------------------------------------------------------
-# LOAD MODELS (CACHED)
-# ------------------------------------------------------
+# ---------------------------
+# Embedding Model (Stable)
+# ---------------------------
 @st.cache_resource
-def load_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+def load_embedding_model():
+    return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-@st.cache_resource
-def load_llm():
-    model_name = "mistralai/Mistral-7B-Instruct-v0.2"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        device_map="auto",
-        torch_dtype="auto"
-    )
-    return pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        max_new_tokens=400,
-        temperature=0.25
-    )
 
-embeddings = load_embeddings()
-llm = load_llm()
+def embed_texts(texts):
+    model = load_embedding_model()
+    return model.encode(texts, show_progress_bar=False)
 
-# ------------------------------------------------------
-# DOCUMENT INGESTION FROM FOLDER
-# ------------------------------------------------------
-def load_documents_from_folder(folder_path):
+# ---------------------------
+# Load Documents
+# ---------------------------
+def load_documents(folder_path):
     documents = []
+
     for file in os.listdir(folder_path):
-        path = os.path.join(folder_path, file)
+        file_path = os.path.join(folder_path, file)
+
         if file.lower().endswith(".pdf"):
-            documents.extend(PyPDFLoader(path).load())
+            loader = PyPDFLoader(file_path)
+            documents.extend(loader.load())
+
         elif file.lower().endswith(".docx"):
-            documents.extend(Docx2txtLoader(path).load())
+            loader = Docx2txtLoader(file_path)
+            documents.extend(loader.load())
+
     return documents
 
-@st.cache_resource
-def build_vector_db():
-    docs = load_documents_from_folder(DATA_FOLDER)
+# ---------------------------
+# Chunking
+# ---------------------------
+def split_documents(documents):
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP
+        chunk_size=800,
+        chunk_overlap=150
     )
-    chunks = splitter.split_documents(docs)
-    return FAISS.from_documents(chunks, embeddings)
+    return splitter.split_documents(documents)
 
-# ------------------------------------------------------
-# RAG QUESTION ANSWERING (COUNSELLOR STYLE)
-# ------------------------------------------------------
-def ask_rag(question):
-    docs = st.session_state.vector_db.similarity_search(question, k=4)
-    context = "\n\n".join([d.page_content for d in docs])
+# ---------------------------
+# Vector Store
+# ---------------------------
+@st.cache_resource
+def build_vectorstore(chunks):
+    texts = [c.page_content for c in chunks]
+    vectors = embed_texts(texts)
 
-    prompt = f"""
-You are a senior professional counsellor and advisor.
-Your tone should be calm, empathetic, clear, and professional.
+    return FAISS.from_embeddings(
+        text_embeddings=list(zip(texts, vectors)),
+        embedding=None
+    )
 
-Rules:
-- Use ONLY the information from the context below
-- Reframe the answer in a structured and professional way
-- Be accurate and factual
-- Do NOT add assumptions
-- If the answer is not available, clearly say so
+# ---------------------------
+# Counsellor Prompt
+# ---------------------------
+def counsellor_prompt(context, question):
+    return f"""
+You are a professional counsellor.
+Answer politely, clearly, and professionally.
+Use simple English or Hinglish if helpful.
+Be accurate and grounded in the provided context.
 
 Context:
 {context}
 
-User Question:
+Question:
 {question}
 
-Professional Counsellor Answer:
+Answer:
 """
 
-    response = llm(prompt)[0]["generated_text"]
-    return response.split("Professional Counsellor Answer:")[-1].strip()
+# ---------------------------
+# Main Logic
+# ---------------------------
+if not os.path.exists(DATA_FOLDER):
+    st.error("❌ BB_Data folder not found")
+    st.stop()
 
-# ------------------------------------------------------
-# SIDEBAR ACTION
-# ------------------------------------------------------
-st.sidebar.header("📂 Knowledge Base")
+with st.spinner("📄 Loading documents..."):
+    docs = load_documents(DATA_FOLDER)
 
-if st.sidebar.button("🔄 Load / Refresh Documents"):
-    with st.spinner("Reading documents and building knowledge base..."):
-        st.session_state.vector_db = build_vector_db()
-        st.session_state.chat = []
-    st.sidebar.success("Documents loaded successfully")
+if not docs:
+    st.warning("No PDF or DOCX files found in BB_Data")
+    st.stop()
 
-# ------------------------------------------------------
-# CHAT UI
-# ------------------------------------------------------
-query = st.chat_input("Ask your question...")
+with st.spinner("✂️ Splitting documents..."):
+    chunks = split_documents(docs)
 
-if query and st.session_state.vector_db:
-    st.session_state.chat.append(("user", query))
-    answer = ask_rag(query)
-    st.session_state.chat.append(("bot", answer))
+with st.spinner("📦 Building vector database (first run takes time)..."):
+    vectorstore = build_vectorstore(chunks)
 
-for role, msg in st.session_state.chat:
-    if role == "user":
-        st.markdown(f"<div class='chat-user'><b>You:</b> {msg}</div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div class='chat-bot'><b>Counsellor:</b> {msg}</div>", unsafe_allow_html=True)
+retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
-if not st.session_state.vector_db:
-    st.info("⬅ Click 'Load / Refresh Documents' to initialize knowledge base")
+# ---------------------------
+# Chat UI
+# ---------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# ------------------------------------------------------
-# END OF app.py
-# ------------------------------------------------------
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-# ------------------------------------------------------
-# requirements.txt  (For Streamlit Hosting)
-# ------------------------------------------------------
-# streamlit
-# langchain
-# faiss-cpu
-# sentence-transformers
-# transformers
-# torch
-# accelerate
-# pypdf
-# python-docx
+user_question = st.chat_input("Ask your question...")
+
+if user_question:
+    st.session_state.messages.append({"role": "user", "content": user_question})
+
+    with st.chat_message("user"):
+        st.markdown(user_question)
+
+    with st.chat_message("assistant"):
+        with st.spinner("🤔 Thinking..."):
+            docs = retriever.get_relevant_documents(user_question)
+            context = "\n\n".join([d.page_content for d in docs])
+
+            answer = counsellor_prompt(context, user_question)
+            st.markdown(answer)
+
+    st.session_state.messages.append({"role": "assistant", "content": answer})
