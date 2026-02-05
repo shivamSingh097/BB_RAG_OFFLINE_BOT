@@ -1,37 +1,28 @@
-import streamlit as st
 import os
+import streamlit as st
 
+from langchain.schema import Document
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
 from sentence_transformers import SentenceTransformer
-import numpy as np
 
-# ---------------------------
-# App Config
-# ---------------------------
-st.set_page_config(page_title="BB Offline RAG Counsellor", layout="wide")
-st.title("🧠 BB Offline RAG Counsellor Bot")
 
+# ===============================
+# CONFIG
+# ===============================
 DATA_FOLDER = "BB_Data"
+FAISS_DIR = "faiss_index"
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
-# ---------------------------
-# Embedding Model (Stable)
-# ---------------------------
-@st.cache_resource
-def load_embedding_model():
-    return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+st.set_page_config(page_title="BB Counsellor Bot", page_icon="🧠", layout="centered")
 
 
-def embed_texts(texts):
-    model = load_embedding_model()
-    return model.encode(texts, show_progress_bar=False)
-
-# ---------------------------
-# Load Documents
-# ---------------------------
-def load_documents(folder_path):
+# ===============================
+# LOAD DOCUMENTS
+# ===============================
+def load_documents(folder_path: str):
     documents = []
 
     for file in os.listdir(folder_path):
@@ -47,9 +38,10 @@ def load_documents(folder_path):
 
     return documents
 
-# ---------------------------
-# Chunking
-# ---------------------------
+
+# ===============================
+# SPLIT DOCUMENTS
+# ===============================
 def split_documents(documents):
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=800,
@@ -57,41 +49,57 @@ def split_documents(documents):
     )
     return splitter.split_documents(documents)
 
-# ---------------------------
-# Vector Store
-# ---------------------------
-@st.cache_resource
-def build_vectorstore(chunks):
-    texts = [c.page_content for c in chunks]
-    vectors = embed_texts(texts)
 
-    return FAISS.from_embeddings(
-        text_embeddings=list(zip(texts, vectors)),
-        embedding=None
+# ===============================
+# EMBEDDINGS (cached safely)
+# ===============================
+@st.cache_resource
+def load_embeddings():
+    return SentenceTransformer(EMBEDDING_MODEL)
+
+
+# ===============================
+# VECTORSTORE (IMPORTANT FIX HERE)
+# ===============================
+@st.cache_resource
+def build_vectorstore(_chunks):
+    embeddings = load_embeddings()
+
+    texts = [doc.page_content for doc in _chunks]
+    metadatas = [doc.metadata for doc in _chunks]
+
+    return FAISS.from_texts(
+        texts=texts,
+        embedding=embeddings,
+        metadatas=metadatas
     )
 
-# ---------------------------
-# Counsellor Prompt
-# ---------------------------
-def counsellor_prompt(context, question):
-    return f"""
-You are a professional counsellor.
-Answer politely, clearly, and professionally.
-Use simple English or Hinglish if helpful.
-Be accurate and grounded in the provided context.
 
-Context:
+# ===============================
+# COUNSELLOR STYLE ANSWER
+# ===============================
+def counsellor_answer(query, docs):
+    context = "\n\n".join([d.page_content for d in docs])
+
+    return f"""
+I understand your concern, and it's good that you're seeking clarity.
+
+Based on the information available, here is a thoughtful and balanced perspective:
+
 {context}
 
-Question:
-{question}
+From a counsellor’s point of view, my suggestion would be to reflect calmly on this, consider your personal situation, and take a step-by-step approach rather than rushing into decisions.
 
-Answer:
+If you'd like, you can ask follow-up questions or share more details so I can guide you better.
 """
 
-# ---------------------------
-# Main Logic
-# ---------------------------
+
+# ===============================
+# UI
+# ===============================
+st.title("🧠 BB Counsellor AI (Offline RAG)")
+st.caption("Answers based strictly on your uploaded documents")
+
 if not os.path.exists(DATA_FOLDER):
     st.error("❌ BB_Data folder not found")
     st.stop()
@@ -103,38 +111,25 @@ if not docs:
     st.warning("No PDF or DOCX files found in BB_Data")
     st.stop()
 
-with st.spinner("✂️ Splitting documents..."):
+with st.spinner("✂️ Preparing knowledge base..."):
     chunks = split_documents(docs)
 
-with st.spinner("📦 Building vector database (first run takes time)..."):
+with st.spinner("📦 Building vector database (first run may take time)..."):
     vectorstore = build_vectorstore(chunks)
 
 retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
-# ---------------------------
-# Chat UI
-# ---------------------------
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+query = st.text_area("Ask your question", height=120)
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+if st.button("Get Counsellor Advice") and query.strip():
+    with st.spinner("🤔 Thinking..."):
+        relevant_docs = retriever.get_relevant_documents(query)
+        answer = counsellor_answer(query, relevant_docs)
 
-user_question = st.chat_input("Ask your question...")
+    st.markdown("### 🧠 Counsellor Response")
+    st.write(answer)
 
-if user_question:
-    st.session_state.messages.append({"role": "user", "content": user_question})
-
-    with st.chat_message("user"):
-        st.markdown(user_question)
-
-    with st.chat_message("assistant"):
-        with st.spinner("🤔 Thinking..."):
-            docs = retriever.get_relevant_documents(user_question)
-            context = "\n\n".join([d.page_content for d in docs])
-
-            answer = counsellor_prompt(context, user_question)
-            st.markdown(answer)
-
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+    with st.expander("📚 Source Excerpts"):
+        for i, d in enumerate(relevant_docs, 1):
+            st.markdown(f"**Source {i}:**")
+            st.write(d.page_content[:600] + "...")
