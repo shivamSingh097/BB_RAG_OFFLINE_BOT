@@ -75,8 +75,10 @@ def get_vectorstore(chunks):
     texts = [c.page_content for c in chunks]
     metadatas = [c.metadata for c in chunks]
 
-    vectorstore = FAISS.from_texts(
-        texts=texts,
+    vectors = embeddings.encode(texts, show_progress_bar=False)
+
+    vectorstore = FAISS.from_embeddings(
+        embeddings=list(zip(texts, vectors)),
         embedding=embeddings,
         metadatas=metadatas
     )
