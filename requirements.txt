@@ -1,24 +1,23 @@
-# Core UI
 streamlit==1.31.1
 
-# LangChain (SAFE split — do NOT add langchain meta package)
+# LangChain modular packages
 langchain-community==0.0.30
 langchain-text-splitters==0.0.1
 
-# Vector Database
+# Vector DB
 faiss-cpu==1.7.4
 
-# Embeddings & NLP
+# Embeddings (NO HuggingFaceEmbeddings class)
 sentence-transformers==2.2.2
 transformers==4.37.2
 torch==2.1.2
 accelerate==0.27.2
 
-# Document Readers
+# Document loaders
 pypdf==3.17.4
 python-docx==1.1.0
 
-# Utilities
+# Utils
 numpy
 scikit-learn
 tqdm
